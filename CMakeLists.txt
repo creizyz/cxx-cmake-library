@@ -20,7 +20,7 @@ set(PROJECT_MAJOR_VERSION ${${PROJECT_NAME}_MAJOR_VERSION})
 set(PROJECT_MINOR_VERSION ${${PROJECT_NAME}_MINOR_VERSION})
 set(PROJECT_PATCH_VERSION ${${PROJECT_NAME}_PATCH_VERSION})
 
-configure_file(src/version.hpp.in include/version.hpp)
+configure_file(src/version.hpp.in version.hpp)
 
 # ================================================================== #
 # ================================================== # Install directory
@@ -39,6 +39,8 @@ if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     set (CMAKE_INSTALL_PREFIX "${DEFAULT_INSTALL_PATH}" CACHE PATH "default install path" FORCE)
 endif()
 
+message("Install directory set to : ${CMAKE_INSTALL_PREFIX}")
+
 # ================================================================== #
 # ================================================== # Principal target
 
@@ -52,23 +54,26 @@ else()
 endif()
 
 include(cmake/settings/cpp.cmake)
-target_compile_features(${TARGET_NAME} PUBLIC "${${PROJECT_NAME}_CXX_STANDARD}")
-target_compile_options(${TARGET_NAME} PRIVATE "${${PROJECT_NAME}_CXX_FLAGS}")
 
 # ================================================================== #
 # ================================================== # Git Version Tracking
 
 add_subdirectory(external/git_watcher)
-target_link_libraries(${TARGET_NAME} git_watcher)
+target_link_libraries(${TARGET_NAME} PRIVATE git_watcher)
 
 # ================================================================== #
 # ================================================== # Dependencies
 
-target_link_directories(${TARGET_NAME} PUBLIC external/lib)
+target_link_directories(${TARGET_NAME} PUBLIC
+  $<INSTALL_INTERFACE:external/lib>
+)
 target_include_directories(${TARGET_NAME} PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
-  ${CMAKE_CURRENT_BINARY_DIR}/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/external/include
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_include_directories(${TARGET_NAME} PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/external/include>
 )
 
 include(cmake/settings/dependencies.cmake)
@@ -91,9 +96,55 @@ endif()
 # ================================================================== #
 # ================================================== # Installation
 
-file(GLOB FIND_PACKAGE_FILE CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/install/Find*.cmake)
+include(GenerateExportHeader)
 
-install(TARGETS   ${TARGET_NAME}                                  DESTINATION lib)
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/            DESTINATION include)
-install(FILES     ${CMAKE_CURRENT_BINARY_DIR}/include/version.hpp DESTINATION include)
-install(FILES     ${FIND_PACKAGE_FILE}                            DESTINATION cmake)
+install(TARGETS ${TARGET_NAME} EXPORT ${PROJECT_NAME}Targets
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  RUNTIME DESTINATION bin
+  INCLUDES DESTINATION include
+)
+
+install(DIRECTORY include/ DESTINATION include)
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/version.hpp DESTINATION include)
+
+# ================================================================== #
+# ================================================== # Package Generation
+
+
+# set_property(TARGET ${TARGET_NAME} PROPERTY VERSION ${${PROJECT_NAME}_MAJOR_VERSION})
+# set_property(TARGET ${TARGET_NAME} PROPERTY SOVERSION 3)
+# set_property(TARGET ${TARGET_NAME} PROPERTY INTERFACE_${PROJECT_NAME}_MAJOR_VERSION ${${PROJECT_NAME}_MAJOR_VERSION})
+# set_property(TARGET ${TARGET_NAME} APPEND PROPERTY
+#   COMPATIBLE_INTERFACE_STRING ${PROJECT_NAME}_MAJOR_VERSION
+# )
+
+# 
+include(CMakePackageConfigHelpers)
+
+write_basic_package_version_file(
+  "${CMAKE_CURRENT_BINARY_DIR}/cmake/${PROJECT_NAME}ConfigVersion.cmake"
+  VERSION ${${PROJECT_NAME}_VERSION}
+  COMPATIBILITY AnyNewerVersion
+)
+
+export(EXPORT ${PROJECT_NAME}Targets
+  FILE "${CMAKE_CURRENT_BINARY_DIR}/cmake/${PROJECT_NAME}Targets.cmake"
+  NAMESPACE ${PROJECT_NAME}::
+)
+
+configure_file(cmake/install/ProjectConfig.cmake "${CMAKE_CURRENT_BINARY_DIR}/cmake/${PROJECT_NAME}Config.cmake")
+
+install(EXPORT ${PROJECT_NAME}Targets
+  FILE ${PROJECT_NAME}Targets.cmake
+  NAMESPACE ${PROJECT_NAME}::
+  DESTINATION cmake
+)
+
+install(
+  FILES
+    cmake/${PROJECT_NAME}Config.cmake
+    "${CMAKE_CURRENT_BINARY_DIR}/cmake/${PROJECT_NAME}ConfigVersion.cmake"
+  DESTINATION cmake
+  COMPONENT Devel
+)
